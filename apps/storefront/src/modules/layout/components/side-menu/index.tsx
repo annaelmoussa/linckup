@@ -13,10 +13,10 @@ import { Locale } from "@lib/data/locales"
 
 
 const SideMenuItems = {
-  Home: "/",
-  Store: "/store",
-  Account: "/account",
-  Cart: "/cart",
+  Accueil: "/",
+  Produits: "/store",
+  Compte: "/account",
+  Panier: "/cart",
 }
 
 type SideMenuProps = {
@@ -127,8 +127,7 @@ const SideMenu = ({ regions, locales, currentLocale }: SideMenuProps) => {
                         />
                       </div>
                       <Text className="flex justify-between txt-compact-small">
-                        © {new Date().getFullYear()} Linckup. All rights
-                        reserved.
+                        © {new Date().getFullYear()} Linckup. Tous droits réservés.
                       </Text>
                     </div>
                   </div>

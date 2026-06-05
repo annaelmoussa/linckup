@@ -18,7 +18,7 @@ export default async function PreviewPrice({ price }: { price: VariantPrice }) {
       )}
       <Text
         className={clx("text-ui-fg-muted", {
-          "text-ui-fg-interactive": price.price_type === "sale",
+          "text-[#00e66b]": price.price_type === "sale",
         })}
         data-testid="price"
       >

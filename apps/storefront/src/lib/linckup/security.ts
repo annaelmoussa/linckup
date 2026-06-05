@@ -3,27 +3,12 @@ import "server-only"
 import { notFound, redirect } from "next/navigation"
 
 import { retrieveCustomer } from "../data/customer"
-import { getMerchantById, getMerchantForCustomer } from "./data"
-
-export function isPublicDemoEnabled() {
-  return (
-    process.env.NODE_ENV !== "production" &&
-    process.env.LINCKUP_ENABLE_PUBLIC_DEMO !== "false"
-  )
-}
+import { getMerchantForCustomer } from "./data"
 
 export async function requireOwnedMerchant(merchantId: string) {
   const customer = await retrieveCustomer()
 
   if (!customer?.email) {
-    if (isPublicDemoEnabled()) {
-      const merchant = await getMerchantById(merchantId)
-
-      if (merchant?.customerEmail === "demo@linckup.local") {
-        return { customer: null, merchant }
-      }
-    }
-
     redirect("/fr/account")
   }
 
@@ -41,10 +26,6 @@ export async function getDashboardMerchant() {
 
   if (customer?.email) {
     return getMerchantForCustomer(customer.email)
-  }
-
-  if (isPublicDemoEnabled()) {
-    return null
   }
 
   redirect("/fr/account")

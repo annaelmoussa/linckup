@@ -375,31 +375,6 @@ export default function LinckupLanding() {
 
   return (
     <main className={styles.page}>
-      <header className={`${styles.stickyHeader} ${styles[headerState]}`}>
-        <div className={styles.shell}>
-          <nav className={styles.nav} aria-label="Navigation Linckup">
-            <a className={styles.brand} href="#top" aria-label="Linckup">
-              <Image
-                src="/linckup/logo-cropped.png"
-                alt="Linckup"
-                width={320}
-                height={80}
-                priority
-              />
-            </a>
-            <div className={styles.navLinks}>
-              <a href="#produit">Produit</a>
-              <a href="#fonctionnement">Routage</a>
-              <Link href="/dashboard">Dashboard</Link>
-              <a href="#faq">FAQ</a>
-            </div>
-            <a className={styles.navCta} href="#commander">
-              Commander
-            </a>
-          </nav>
-        </div>
-      </header>
-
       <section className={styles.hero} id="top">
         <div className={styles.shell}>
           <div className={styles.heroContainer} ref={heroRef}>
@@ -425,9 +400,9 @@ export default function LinckupLanding() {
                   ).
                 </p>
                 <div className={styles.heroActions}>
-                <a className={styles.primaryCta} href="#commander">
-                  Commander le pack
-                </a>
+                <Link className={styles.primaryCta} href="/store">
+                  Commander la plaque
+                </Link>
                   <a className={styles.secondaryCta} href="#fonctionnement">
                     Voir comment ça marche
                   </a>
@@ -628,7 +603,7 @@ export default function LinckupLanding() {
                 dès maintenant pour faire décoller vos avis Google et booster votre visibilité locale.
               </p>
               <div className={styles.finalShowcaseActions}>
-                <Link className={styles.finalCta} href="/fr/products/pack-linckup-comptoir">
+                <Link className={styles.finalCta} href="/store">
                   Commander la plaque
                 </Link>
               </div>
@@ -643,7 +618,7 @@ export default function LinckupLanding() {
             <Image src="/linckup/logo-cropped.png" alt="Linckup" width={160} height={40} className={styles.footerLogo} />
             <div className={styles.footerActions}>
               <a className={styles.primaryCta} href="#commander">
-                Commander le pack
+                Commander la plaque
               </a>
             </div>
           </div>
@@ -652,7 +627,7 @@ export default function LinckupLanding() {
             <div className={styles.footerLinks}>
               <a href="#produit">Produit</a>
               <a href="#fonctionnement">Routage</a>
-              <Link href="/dashboard">Dashboard</Link>
+              <Link href="/account">Compte</Link>
               <a href="#faq">FAQ</a>
             </div>
           </div>

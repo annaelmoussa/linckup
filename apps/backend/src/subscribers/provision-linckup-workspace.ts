@@ -10,6 +10,8 @@ const globalForLinckup = globalThis as unknown as {
   linckupProvisioningPool?: Pool;
 };
 
+const DEFAULT_TRIAL_DAYS = Number(process.env.LINCKUP_TRIAL_DAYS || 14);
+
 function getPool() {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for Linckup provisioning");
@@ -22,6 +24,15 @@ function getPool() {
   }
 
   return globalForLinckup.linckupProvisioningPool;
+}
+
+function createTrialEndsAt() {
+  const value = new Date();
+  value.setDate(
+    value.getDate() +
+      (Number.isFinite(DEFAULT_TRIAL_DAYS) ? DEFAULT_TRIAL_DAYS : 14),
+  );
+  return value;
 }
 
 function slugify(value: string) {
@@ -82,7 +93,7 @@ export default async function provisionLinckupWorkspace({
 
     const existing = await client.query(
       "select id from linckup_merchants where customer_email = $1 limit 1",
-      [order.email]
+      [order.email],
     );
 
     if (existing.rowCount && existing.rows[0]?.id) {
@@ -95,8 +106,8 @@ export default async function provisionLinckupWorkspace({
     const slug = `${slugBase}-${Date.now().toString(36)}`;
     const merchant = await client.query<{ id: string }>(
       `insert into linckup_merchants
-        (name, slug, customer_email, business_type, subscription_status, settings)
-       values ($1, $2, $3, $4, $5, $6)
+        (name, slug, customer_email, business_type, subscription_status, trial_ends_at, settings)
+       values ($1, $2, $3, $4, $5, $6, $7)
        on conflict (customer_email) do nothing
        returning id`,
       [
@@ -105,8 +116,9 @@ export default async function provisionLinckupWorkspace({
         order.email,
         "commerce",
         "trialing",
+        createTrialEndsAt(),
         JSON.stringify({ source: "order.placed", order_id: data.id }),
-      ]
+      ],
     );
 
     if (!merchant.rowCount || !merchant.rows[0]?.id) {
@@ -122,7 +134,7 @@ export default async function provisionLinckupWorkspace({
       `insert into linckup_nfc_tags (public_id, merchant_id, status)
        values ($1, $2, 'active')
        on conflict (public_id) do nothing`,
-      [publicId, merchantId]
+      [publicId, merchantId],
     );
 
     await client.query(
@@ -135,7 +147,7 @@ export default async function provisionLinckupWorkspace({
         merchantId,
         process.env.DEFAULT_REVIEW_URL || "https://www.google.com",
         "https://www.tripadvisor.fr/",
-      ]
+      ],
     );
 
     await client.query("commit");
@@ -145,7 +157,7 @@ export default async function provisionLinckupWorkspace({
     logger.error(
       `Failed to provision Linckup workspace: ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }`,
     );
   } finally {
     client.release();

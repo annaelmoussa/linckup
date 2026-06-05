@@ -55,7 +55,7 @@
   }
 
   .contrast-btn {
-    @apply px-4 py-2 border border-black rounded-full hover:bg-black hover:text-white transition-colors duration-200 ease-in;
+    @apply px-4 py-2 border border-[#062716] rounded-full hover:bg-[#00e66b] hover:border-[#00e66b] hover:text-[#002716] transition-colors duration-200 ease-in;
   }
 
   .text-xsmall-regular {

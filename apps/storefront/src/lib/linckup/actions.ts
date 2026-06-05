@@ -1,18 +1,25 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { headers as nextHeaders } from "next/headers"
 import { redirect } from "next/navigation"
 import { and, eq } from "drizzle-orm"
+import Stripe from "stripe"
 
 import { getDb } from "../../db/client"
 import { merchants, reviewTargets } from "../../db/schema"
-import { createDemoMerchant, getDashboardData } from "./data"
+import { retrieveCustomer } from "../data/customer"
+import {
+  createCustomerMerchant,
+  getDashboardData,
+  isLinckupAccessAllowed,
+} from "./data"
 import {
   getPlatformConfig,
   REVIEW_PLATFORM_CONFIGS,
   REVIEW_PLATFORMS,
 } from "./platforms"
-import { isPublicDemoEnabled, requireOwnedMerchant } from "./security"
+import { requireOwnedMerchant } from "./security"
 import { ReviewPlatform } from "./types"
 import { assertAllowedPlatformUrl, clampText } from "./validation"
 
@@ -33,32 +40,35 @@ function parseReviewCount(formData: FormData, key: string) {
     : 0
 }
 
-function parseSubscriptionStatus(value: FormDataEntryValue | null) {
-  if (
-    value === "trialing" ||
-    value === "active" ||
-    value === "paused" ||
-    value === "canceled"
-  ) {
-    return value
-  }
-
-  throw new Error("Statut SaaS invalide")
+function getCountryCode(formData: FormData) {
+  return formData.get("countryCode")?.toString().trim() || "fr"
 }
 
-export async function createDemoWorkspace() {
-  if (!isPublicDemoEnabled()) {
-    redirect("/fr/account")
+export async function activateLinckupWorkspace(formData: FormData) {
+  const countryCode = getCountryCode(formData)
+  const customer = await retrieveCustomer()
+
+  if (!customer?.email) {
+    redirect(`/${countryCode}/account`)
   }
 
-  await createDemoMerchant()
-  revalidatePath("/dashboard")
-  redirect("/dashboard")
+  await createCustomerMerchant(
+    customer.email,
+    [customer.first_name, customer.last_name].filter(Boolean).join(" "),
+  )
+
+  revalidatePath(`/${countryCode}/account`)
+  redirect(`/${countryCode}/account`)
 }
 
 export async function updateMerchantSettings(formData: FormData) {
   const merchantId = requireString(formData, "merchantId")
-  await requireOwnedMerchant(merchantId)
+  const countryCode = getCountryCode(formData)
+  const { merchant } = await requireOwnedMerchant(merchantId)
+
+  if (!isLinckupAccessAllowed(merchant)) {
+    throw new Error("Abonnement Linckup inactif")
+  }
 
   const db = getDb()
 
@@ -67,20 +77,70 @@ export async function updateMerchantSettings(formData: FormData) {
     .set({
       name: clampText(requireString(formData, "name"), 120),
       businessType: clampText(requireString(formData, "businessType"), 80),
-      subscriptionStatus: parseSubscriptionStatus(
-        formData.get("subscriptionStatus")
-      ),
       aiEnabled: formData.get("aiEnabled") === "on",
       updatedAt: new Date(),
     })
     .where(eq(merchants.id, merchantId))
 
-  revalidatePath("/dashboard")
+  revalidatePath(`/${countryCode}/account`)
+}
+
+export async function startLinckupSubscriptionCheckout(formData: FormData) {
+  const merchantId = requireString(formData, "merchantId")
+  const countryCode = getCountryCode(formData)
+  const { customer, merchant } = await requireOwnedMerchant(merchantId)
+  const secretKey = process.env.STRIPE_SECRET_KEY
+  const priceId = process.env.STRIPE_LINCKUP_PRICE_ID
+
+  if (!secretKey || !priceId) {
+    throw new Error("Stripe billing is not configured")
+  }
+
+  const headers = await nextHeaders()
+  const origin =
+    headers.get("origin") ||
+    process.env.NEXT_PUBLIC_STOREFRONT_URL ||
+    `http://localhost:${process.env.PORT || 8000}`
+  const stripe = new Stripe(secretKey)
+  const metadata = {
+    merchant_id: merchant.id,
+    customer_email: customer.email,
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    client_reference_id: merchant.id,
+    customer: merchant.stripeCustomerId || undefined,
+    customer_email: merchant.stripeCustomerId ? undefined : customer.email,
+    line_items: [
+      {
+        price: priceId,
+        quantity: 1,
+      },
+    ],
+    metadata,
+    subscription_data: {
+      metadata,
+    },
+    success_url: `${origin}/${countryCode}/account?billing=success`,
+    cancel_url: `${origin}/${countryCode}/account?billing=canceled`,
+  })
+
+  if (!session.url) {
+    throw new Error("Stripe checkout session URL is missing")
+  }
+
+  redirect(session.url)
 }
 
 export async function updateReviewTargets(formData: FormData) {
   const merchantId = requireString(formData, "merchantId")
-  await requireOwnedMerchant(merchantId)
+  const countryCode = getCountryCode(formData)
+  const { merchant } = await requireOwnedMerchant(merchantId)
+
+  if (!isLinckupAccessAllowed(merchant)) {
+    throw new Error("Abonnement Linckup inactif")
+  }
 
   const db = getDb()
 
@@ -101,8 +161,8 @@ export async function updateReviewTargets(formData: FormData) {
           .where(
             and(
               eq(reviewTargets.id, id),
-              eq(reviewTargets.merchantId, merchantId)
-            )
+              eq(reviewTargets.merchantId, merchantId),
+            ),
           )
       }
 
@@ -124,7 +184,10 @@ export async function updateReviewTargets(formData: FormData) {
         .update(reviewTargets)
         .set(payload)
         .where(
-          and(eq(reviewTargets.id, id), eq(reviewTargets.merchantId, merchantId))
+          and(
+            eq(reviewTargets.id, id),
+            eq(reviewTargets.merchantId, merchantId),
+          ),
         )
     } else {
       const [existingTarget] = await db
@@ -133,8 +196,8 @@ export async function updateReviewTargets(formData: FormData) {
         .where(
           and(
             eq(reviewTargets.merchantId, merchantId),
-            eq(reviewTargets.platform, platform)
-          )
+            eq(reviewTargets.platform, platform),
+          ),
         )
         .limit(1)
 
@@ -152,28 +215,38 @@ export async function updateReviewTargets(formData: FormData) {
     }
   }
 
-  revalidatePath("/dashboard")
+  revalidatePath(`/${countryCode}/account`)
 }
 
 export async function askGrowthAssistant(
   _state: { question?: string; answer?: string },
-  formData: FormData
+  formData: FormData,
 ) {
   const merchantId = requireString(formData, "merchantId")
-  await requireOwnedMerchant(merchantId)
+  const { merchant } = await requireOwnedMerchant(merchantId)
+
+  if (!isLinckupAccessAllowed(merchant)) {
+    return {
+      question: "",
+      answer: "L'assistant est disponible avec un abonnement Linckup actif.",
+    }
+  }
 
   const question = clampText(requireString(formData, "question"), 500)
   const data = await getDashboardData(merchantId)
   const weeklyScans = data.metrics.weeklyScans
   const targets = data.targets
-    .map((target) => `${target.label || target.platform}: ${target.reviewCount} avis`)
+    .map(
+      (target) =>
+        `${target.label || target.platform}: ${target.reviewCount} avis`,
+    )
     .join(", ")
 
   const travelPlatforms: ReviewPlatform[] = REVIEW_PLATFORM_CONFIGS.filter(
-    (config) => config.internationalPreferred
+    (config) => config.internationalPreferred,
   ).map((config) => config.platform)
   const travelTarget = data.targets.find((target) =>
-    travelPlatforms.includes(target.platform)
+    travelPlatforms.includes(target.platform),
   )
   const google = data.targets.find((target) => target.platform === "google")
   const advice =

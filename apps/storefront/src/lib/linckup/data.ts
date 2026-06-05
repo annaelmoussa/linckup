@@ -7,15 +7,20 @@ import { merchants, nfcTags, reviewTargets, scanEvents } from "../../db/schema"
 import { REVIEW_PLATFORM_CONFIGS } from "./platforms"
 import { chooseReviewTarget } from "./routing"
 import { assertSafeDestinationUrl } from "./validation"
-import { LinckupTargetForm, ReviewPlatform } from "./types"
+import {
+  LinckupSubscriptionStatus,
+  LinckupTargetForm,
+  ReviewPlatform,
+} from "./types"
 
 export type LinckupDashboardData = Awaited<ReturnType<typeof getDashboardData>>
 
 const DEFAULT_TARGETS: LinckupTargetForm[] = [
   {
     platform: "google",
-    label: REVIEW_PLATFORM_CONFIGS.find((config) => config.platform === "google")!
-      .label,
+    label: REVIEW_PLATFORM_CONFIGS.find(
+      (config) => config.platform === "google",
+    )!.label,
     url: "https://www.google.com/search?q=Linckup+avis",
     reviewCount: 18,
     enabled: true,
@@ -23,13 +28,93 @@ const DEFAULT_TARGETS: LinckupTargetForm[] = [
   {
     platform: "tripadvisor",
     label: REVIEW_PLATFORM_CONFIGS.find(
-      (config) => config.platform === "tripadvisor"
+      (config) => config.platform === "tripadvisor",
     )!.label,
     url: "https://www.tripadvisor.fr/",
     reviewCount: 3,
     enabled: true,
   },
 ]
+
+const DEFAULT_TRIAL_DAYS = Number(process.env.LINCKUP_TRIAL_DAYS || 14)
+
+function addDays(value: Date, days: number) {
+  const next = new Date(value)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+export function createDefaultTrialEndsAt() {
+  return addDays(
+    new Date(),
+    Number.isFinite(DEFAULT_TRIAL_DAYS) ? DEFAULT_TRIAL_DAYS : 14,
+  )
+}
+
+export function isLinckupAccessAllowed(merchant: {
+  subscriptionStatus: LinckupSubscriptionStatus
+  trialEndsAt?: Date | string | null
+  accessExpiresAt?: Date | string | null
+}) {
+  const now = Date.now()
+  const accessExpiresAt = merchant.accessExpiresAt
+    ? new Date(merchant.accessExpiresAt).getTime()
+    : null
+  const trialEndsAt = merchant.trialEndsAt
+    ? new Date(merchant.trialEndsAt).getTime()
+    : null
+
+  if (merchant.subscriptionStatus === "active") {
+    return !accessExpiresAt || accessExpiresAt >= now
+  }
+
+  if (merchant.subscriptionStatus === "trialing") {
+    return !trialEndsAt || trialEndsAt >= now
+  }
+
+  return false
+}
+
+export function getLinckupAccessState(merchant: {
+  subscriptionStatus: LinckupSubscriptionStatus
+  trialEndsAt?: Date | string | null
+  accessExpiresAt?: Date | string | null
+  billingStatusReason?: string | null
+}) {
+  const allowed = isLinckupAccessAllowed(merchant)
+
+  if (allowed) {
+    return {
+      allowed,
+      title:
+        merchant.subscriptionStatus === "trialing"
+          ? "Essai actif"
+          : "Abonnement actif",
+      message:
+        merchant.subscriptionStatus === "trialing"
+          ? "Votre essai donne accès au dashboard Linckup."
+          : "Votre abonnement est payé et le dashboard est disponible.",
+    }
+  }
+
+  const messages: Record<LinckupSubscriptionStatus, string> = {
+    incomplete: "Le paiement initial de l'abonnement n'est pas finalisé.",
+    trialing: "Votre période d'essai est terminée.",
+    active: "Votre accès a expiré. Vérifiez la facturation.",
+    past_due:
+      "Le dernier paiement a échoué. Mettez à jour le moyen de paiement.",
+    unpaid: "L'abonnement est impayé.",
+    paused: "L'abonnement est en pause.",
+    canceled: "L'abonnement est annulé.",
+  }
+
+  return {
+    allowed,
+    title: "Accès dashboard suspendu",
+    message:
+      merchant.billingStatusReason || messages[merchant.subscriptionStatus],
+  }
+}
 
 function slugify(value: string) {
   return value
@@ -43,13 +128,29 @@ function slugify(value: string) {
 
 export function buildPublicTagId(name: string) {
   const slug = slugify(name) || "commerce"
-  return `${slug}-demo`
+  return `${slug}-${crypto.randomUUID().slice(0, 8)}`
 }
 
-export async function createDemoMerchant(customerEmail?: string | null) {
+export async function createCustomerMerchant(
+  customerEmail: string,
+  customerName?: string | null,
+) {
   const db = getDb()
-  const publicId = buildPublicTagId(customerEmail || "linckup")
-  const slug = publicId.replace(/-demo$/, "")
+
+  const existingMerchant = await getMerchantForCustomer(customerEmail)
+
+  if (existingMerchant) {
+    const [tag] = await db
+      .select()
+      .from(nfcTags)
+      .where(eq(nfcTags.merchantId, existingMerchant.id))
+      .limit(1)
+
+    return { merchant: existingMerchant, tag }
+  }
+
+  const publicId = buildPublicTagId(customerEmail)
+  const slug = publicId.replace(/-[a-f0-9]{8}$/, "")
 
   const [existingTag] = await db
     .select()
@@ -70,13 +171,14 @@ export async function createDemoMerchant(customerEmail?: string | null) {
   const [merchant] = await db
     .insert(merchants)
     .values({
-      name: "Commerce Demo Linckup",
+      name: customerName?.trim() || "Commerce Linckup",
       slug,
-      customerEmail: customerEmail || "demo@linckup.local",
+      customerEmail,
       businessType: "restaurant",
-      subscriptionStatus: "active",
+      subscriptionStatus: "trialing",
+      trialEndsAt: createDefaultTrialEndsAt(),
       settings: {
-        goal: "Reequilibrer TripAdvisor sans perdre Google.",
+        goal: "Configurer les destinations d'avis apres la commande.",
       },
     })
     .returning()
@@ -99,7 +201,7 @@ export async function createDemoMerchant(customerEmail?: string | null) {
       priority: (index + 1) * 10,
       reviewCount: target.reviewCount,
       enabled: target.enabled,
-    }))
+    })),
   )
 
   return { merchant, tag }
@@ -196,7 +298,12 @@ export async function getDashboardData(merchantId: string) {
   const weeklyScans = await db
     .select({ value: count() })
     .from(scanEvents)
-    .where(and(eq(scanEvents.merchantId, merchantId), gte(scanEvents.createdAt, since)))
+    .where(
+      and(
+        eq(scanEvents.merchantId, merchantId),
+        gte(scanEvents.createdAt, since),
+      ),
+    )
 
   const scansByPlatform = await db
     .select({
@@ -220,7 +327,12 @@ export async function getDashboardData(merchantId: string) {
       value: count(),
     })
     .from(scanEvents)
-    .where(and(eq(scanEvents.merchantId, merchantId), gte(scanEvents.createdAt, since)))
+    .where(
+      and(
+        eq(scanEvents.merchantId, merchantId),
+        gte(scanEvents.createdAt, since),
+      ),
+    )
     .groupBy(scanEvents.reviewTargetId)
 
   return {
@@ -244,7 +356,7 @@ function normalizeStoredHeader(value: string | null, fallback: string) {
 export async function resolveScanDestination(
   publicId: string,
   languageHeader: string | null,
-  userAgent: string | null
+  userAgent: string | null,
 ) {
   const db = getDb()
   const entity = await getMerchantByTag(publicId)
@@ -264,7 +376,7 @@ export async function resolveScanDestination(
       enabled: reviewTargets.enabled,
       recentScans:
         sql<number>`count(${scanEvents.id}) filter (where ${scanEvents.createdAt} >= ${since})`.mapWith(
-          Number
+          Number,
         ),
     })
     .from(reviewTargets)
@@ -284,7 +396,7 @@ export async function resolveScanDestination(
     merchantId: entity.merchant.id,
     language: normalizeStoredHeader(
       languageHeader?.split(",")[0] || null,
-      "unknown"
+      "unknown",
     ),
     platform: target?.platform as ReviewPlatform | undefined,
     destinationUrl,

@@ -24,8 +24,11 @@ export const reviewPlatform = pgEnum("linckup_review_platform", [
 ])
 
 export const subscriptionStatus = pgEnum("linckup_subscription_status", [
+  "incomplete",
   "trialing",
   "active",
+  "past_due",
+  "unpaid",
   "paused",
   "canceled",
 ])
@@ -41,6 +44,14 @@ export const merchants = pgTable(
     subscriptionStatus: subscriptionStatus("subscription_status")
       .default("trialing")
       .notNull(),
+    stripeCustomerId: text("stripe_customer_id"),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end", {
+      withTimezone: true,
+    }),
+    trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+    accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
+    billingStatusReason: text("billing_status_reason"),
     aiEnabled: boolean("ai_enabled").default(true).notNull(),
     settings: jsonb("settings").$type<Record<string, unknown>>().default({}),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -53,9 +64,15 @@ export const merchants = pgTable(
   (table) => [
     index("linckup_merchants_slug_idx").on(table.slug),
     uniqueIndex("linckup_merchants_customer_email_unique_idx").on(
-      table.customerEmail
+      table.customerEmail,
     ),
-  ]
+    uniqueIndex("linckup_merchants_stripe_customer_id_unique_idx").on(
+      table.stripeCustomerId,
+    ),
+    uniqueIndex("linckup_merchants_stripe_subscription_id_unique_idx").on(
+      table.stripeSubscriptionId,
+    ),
+  ],
 )
 
 export const nfcTags = pgTable(
@@ -77,7 +94,7 @@ export const nfcTags = pgTable(
   (table) => [
     index("linckup_nfc_tags_public_id_idx").on(table.publicId),
     index("linckup_nfc_tags_merchant_id_idx").on(table.merchantId),
-  ]
+  ],
 )
 
 export const reviewTargets = pgTable(
@@ -105,9 +122,9 @@ export const reviewTargets = pgTable(
     index("linckup_review_targets_priority_idx").on(table.priority),
     uniqueIndex("linckup_review_targets_merchant_platform_unique_idx").on(
       table.merchantId,
-      table.platform
+      table.platform,
     ),
-  ]
+  ],
 )
 
 export const scanEvents = pgTable(
@@ -117,9 +134,12 @@ export const scanEvents = pgTable(
     nfcTagId: uuid("nfc_tag_id").references(() => nfcTags.id, {
       onDelete: "set null",
     }),
-    reviewTargetId: uuid("review_target_id").references(() => reviewTargets.id, {
-      onDelete: "set null",
-    }),
+    reviewTargetId: uuid("review_target_id").references(
+      () => reviewTargets.id,
+      {
+        onDelete: "set null",
+      },
+    ),
     merchantId: uuid("merchant_id").references(() => merchants.id, {
       onDelete: "set null",
     }),
@@ -136,5 +156,5 @@ export const scanEvents = pgTable(
     index("linckup_scan_events_review_target_id_idx").on(table.reviewTargetId),
     index("linckup_scan_events_merchant_id_idx").on(table.merchantId),
     index("linckup_scan_events_created_at_idx").on(table.createdAt),
-  ]
+  ],
 )

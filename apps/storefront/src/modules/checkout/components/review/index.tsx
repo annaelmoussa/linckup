@@ -32,7 +32,7 @@ const Review = ({ cart }: { cart: HttpTypes.StoreCart }) => {
             }
           )}
         >
-          Review
+          Vérification
         </Heading>
       </div>
       {isOpen && previousStepsCompleted && (
@@ -40,9 +40,7 @@ const Review = ({ cart }: { cart: HttpTypes.StoreCart }) => {
           <div className="flex items-start gap-x-1 w-full mb-6">
             <div className="w-full">
               <Text className="txt-medium-plus text-ui-fg-base mb-1">
-                By clicking the Place Order button, you confirm that you have
-                read, understand and accept our Terms of Use, Terms of Sale and
-                Returns Policy and acknowledge that you have read Linckup&apos;s Privacy Policy.
+                En cliquant sur "Passer la commande", vous confirmez avoir lu, compris et accepté nos Conditions générales de vente et notre Politique de retour, et vous reconnaissez avoir pris connaissance de la Politique de confidentialité de Linckup.
               </Text>
             </div>
           </div>
