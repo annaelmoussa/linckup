@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1780588254363,
+      "tag": "0000_yielding_swordsman",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780592400000,
+      "tag": "0001_linckup_mvp",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780596000000,
+      "tag": "0002_add_booking_platform",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780599600000,
+      "tag": "0003_secure_linckup_merchants",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780603200000,
+      "tag": "0004_unique_review_target_platform",
+      "breakpoints": true
+    }
+  ]
+}

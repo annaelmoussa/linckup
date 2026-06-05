@@ -1,0 +1,21 @@
+FROM node:20-bookworm
+
+WORKDIR /server
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && npm install -g pnpm@10.18.1
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/backend/package.json ./apps/backend/package.json
+COPY apps/storefront/package.json ./apps/storefront/package.json
+
+RUN pnpm install --frozen-lockfile
+
+COPY apps/backend ./apps/backend
+COPY turbo.json ./
+
+EXPOSE 9000 5173
+
+CMD ["sh", "./apps/backend/start.sh"]

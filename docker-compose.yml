@@ -1,0 +1,106 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: linckup_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: linckup
+      POSTGRES_USER: linckup
+      POSTGRES_PASSWORD: linckup
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U linckup -d linckup"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    container_name: linckup_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: linckup_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://linckup:linckup@postgres:5432/linckup?sslmode=disable
+      PGSSLMODE: disable
+      MEDUSA_TELEMETRY_DISABLED: "true"
+      DOTENV_CONFIG_QUIET: "true"
+      REDIS_URL: redis://redis:6379
+      STORE_CORS: http://localhost:8000,http://storefront:8000
+      ADMIN_CORS: http://localhost:5173,http://localhost:9000
+      AUTH_CORS: http://localhost:5173,http://localhost:9000,http://localhost:8000
+      JWT_SECRET: change-me-in-production
+      COOKIE_SECRET: change-me-in-production
+    ports:
+      - "9000:9000"
+      - "5173:5173"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:9000/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  storefront:
+    build:
+      context: .
+      dockerfile: Dockerfile.storefront
+    container_name: linckup_storefront
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./apps/storefront/src:/server/apps/storefront/src
+      - ./apps/storefront/public:/server/apps/storefront/public
+      - ./apps/storefront/drizzle:/server/apps/storefront/drizzle
+      - ./apps/storefront/check-env-variables.js:/server/apps/storefront/check-env-variables.js
+      - ./apps/storefront/drizzle.config.ts:/server/apps/storefront/drizzle.config.ts
+      - ./apps/storefront/eslint.config.mjs:/server/apps/storefront/eslint.config.mjs
+      - ./apps/storefront/next.config.js:/server/apps/storefront/next.config.js
+      - ./apps/storefront/package.json:/server/apps/storefront/package.json
+      - ./apps/storefront/postcss.config.js:/server/apps/storefront/postcss.config.js
+      - ./apps/storefront/start.sh:/server/apps/storefront/start.sh
+      - ./apps/storefront/tailwind.config.js:/server/apps/storefront/tailwind.config.js
+      - ./apps/storefront/tsconfig.json:/server/apps/storefront/tsconfig.json
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://linckup:linckup@postgres:5432/linckup?sslmode=disable
+      PGSSLMODE: disable
+      NEXT_TELEMETRY_DISABLED: "1"
+      BROWSERSLIST_IGNORE_OLD_DATA: "true"
+      DOTENV_CONFIG_QUIET: "true"
+      NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://localhost:9000
+      MEDUSA_BACKEND_URL_INTERNAL: http://backend:9000
+      NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: auto
+      NEXT_PUBLIC_DEFAULT_REGION: fr
+      NEXT_PUBLIC_BASE_URL: http://localhost:8000
+      NEXT_PUBLIC_STRIPE_KEY: ""
+      DEFAULT_REVIEW_URL: https://www.google.com/search?q=Linckup
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
